@@ -1,0 +1,155 @@
+﻿@page "/changement-maison"
+
+<h3> Liste des sorciers ! </h3>
+
+<div>
+    <table class="table">
+        <tr>
+            <th>ID</th>
+            <th>Nom</th>
+            <th>Prénom</th>
+            <th>Maison</th>
+            <th>MaisonID</th>
+        </tr>
+        @foreach(Sorcier sorcier in sorciers)
+        {
+            <tr>
+                <td>@sorcier.Id</td>
+                <td>@sorcier.Nom</td>
+                <td>@sorcier.Prenom</td>
+
+                @if(sorcier.Maison is null)
+                {
+                    @foreach (Maison maison in maisons!)
+                    {
+                        if (maison.Id == sorcier.MaisonId)
+                        {
+                            sorcier.Maison = maison.Nom;
+                        }
+                    }
+                }
+
+                <td>@sorcier.Maison</td>
+                <td>@sorcier.MaisonId</td>
+            </tr>
+            
+        }
+
+    </table>
+</div>
+
+<hr/>
+
+<h3> Change ton sorcier de maison ! </h3>
+
+<div>
+    <EditForm EditContext="EditContext2" OnValidSubmit="OnValidSubmitChangeHouse">
+        <DataAnnotationsValidator />
+        <ValidationSummary Model="ChangeForm" />
+        <div>
+            <label>ID :</label>
+            <InputText @bind-Value="ChangeForm.Id" />
+            <ValidationMessage For="() => ChangeForm.Id" />
+        </div>
+        <div>
+            <label>Maison :</label>
+            <InputText @bind-Value="ChangeForm.Maison" />
+            <ValidationMessage For="() => ChangeForm.Maison" />
+        </div>
+        <div>
+            <input type="submit" value="Send" class="btn btn-danger" />
+        </div>
+    </EditForm>
+</div>
+
+@code {
+
+    record Sorcier(int Id, string Nom, string Prenom, string Maison, Guid MaisonId)
+    {
+        public string? Maison { get; set; }
+    }
+
+    private Sorcier[]? sorciersDb = null;
+    private List<Sorcier> sorciers = new List<Sorcier>();
+
+
+    record Maison(Guid Id, string Nom, string Fondateur, string Couleur, string Embleme);
+    private Maison[]? maisons = null;
+    public Guid maisonId;
+    private string nomMaison = string.Empty;
+
+    ChangeHouseForm ChangeForm = default!;
+    EditContext EditContext2 = default!;
+    ValidationMessageStore MessageStore2 = default!;
+
+    private void OnValidSubmitChangeHouse()
+    {
+        foreach (Maison maison in maisons!)
+        {
+            if (maison.Nom == ChangeForm.Maison)
+            {
+                nomMaison = maison.Nom;
+                ChangeHouse(int.Parse(ChangeForm.Id), ChangeForm.Maison);
+            }
+        }   
+    }
+
+    protected override void OnInitialized()
+    {
+        ChangeForm = new ChangeHouseForm();
+        EditContext2 = new EditContext(ChangeForm);
+        MessageStore2 = new ValidationMessageStore(EditContext2);
+
+        EditContext2.OnFieldChanged += (sender, eventArgs) => ValidateFields((EditContext)sender!, MessageStore2, eventArgs.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        HttpClient httpClient = factory.CreateClient("Poudlard");
+        maisons = await httpClient.GetFromJsonAsync<Maison[]>("maison", new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+        sorciersDb = await httpClient.GetFromJsonAsync<Sorcier[]>("sorcier", new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+        sorciers = new List<Sorcier>(sorciersDb);
+    }
+
+    private void ValidateFields(EditContext editContext, ValidationMessageStore messageStore, FieldIdentifier fieldIdentifier)
+    {
+        messageStore.Clear();
+
+        // if (!(sorciers.Any(e => e.Id == int.Parse(ChangeForm.Id))))
+        // {
+        //     messageStore.Add(fieldIdentifier, "L'ID du sorcier n'est pas présent dans la base de donnée");
+        //     editContext.NotifyValidationStateChanged();
+        // }
+        // if (!(maisons.Any(f => f.Nom == ChangeForm.Maison)))
+        // {
+        //     messageStore.Add(fieldIdentifier, "La maison renseignée n'existe pas");
+        //     editContext.NotifyValidationStateChanged();
+        // }
+    }
+
+    private async Task ChangeHouse(int idSorcier, string maison)
+    {
+        HttpClient httpClient = factory.CreateClient("Poudlard");
+
+        foreach (Maison m in maisons)
+        {
+            if (maison.ToLower() == m.Nom.ToLower())
+            {
+                maisonId = m.Id;
+            }
+        }
+        NewInfo majSorcier = new NewInfo(idSorcier, maisonId);
+        var response = await httpClient.PatchAsJsonAsync("sorcier", majSorcier, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+    }
+
+    class ChangeHouseForm
+    {
+        [Required]
+        public string Id { get; set; }
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public string Maison { get; set; } = "";
+    }
+
+    record NewInfo(int id, Guid maisonId); 
+}

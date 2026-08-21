@@ -1,0 +1,149 @@
+﻿@page "/ajout-sorcier"
+
+<h3> Liste des sorciers ! </h3>
+
+<div>
+    <table class="table">
+        <tr>
+            <th>ID</th>
+            <th>Nom</th>
+            <th>Prénom</th>
+            <th>Maison</th>
+            <th>MaisonID</th>
+        </tr>
+        @foreach(Sorcier sorcier in sorciers)
+        {
+            <tr>
+                <td>@sorcier.Id</td>
+                <td>@sorcier.Nom</td>
+                <td>@sorcier.Prenom</td>
+
+                @if(sorcier.Maison is null)
+                {
+                    @foreach (Maison maison in maisons!)
+                    {
+                        if (maison.Id == sorcier.MaisonId)
+                        {
+                            sorcier.Maison = maison.Nom;
+                        }
+                    }
+                }
+
+                <td>@sorcier.Maison</td>
+                <td>@sorcier.MaisonId</td>
+            </tr>
+            
+        }
+
+    </table>
+</div>
+
+<hr/>
+
+<h3> Crée ton propre sorcier ! </h3>
+
+<div>
+    <EditForm EditContext="EditContext" OnValidSubmit="OnValidSubmitExtendedForm">
+        <DataAnnotationsValidator />
+        <ValidationSummary Model="ExtendedForm" />
+        <div>
+            <label>Nom :</label>
+            <InputText @bind-Value="ExtendedForm.Nom" />
+            <ValidationMessage For="() => ExtendedForm.Nom" />
+        </div>
+        <div>
+            <label>Prénom :</label>
+            <InputText @bind-Value="ExtendedForm.Prénom" />
+            <ValidationMessage For="() => ExtendedForm.Prénom" />
+        </div>
+        <div>
+            <label>Maison :</label>
+            <InputText @bind-Value="ExtendedForm.Maison" />
+            <ValidationMessage For="() => ExtendedForm.Maison" />
+        </div>
+        <div>
+            <input type="submit" value="Send" class="btn btn-danger" />
+        </div>
+    </EditForm>
+</div>
+
+@code {
+
+    record Sorcier(int Id, string Nom, string Prenom, string Maison, Guid MaisonId)
+    {
+        public string? Maison { get; set; }
+    }
+
+    private Sorcier[]? sorciersDb = null;
+    private List<Sorcier> sorciers = new List<Sorcier>();
+
+
+    record Maison(Guid Id, string Nom, string Fondateur, string Couleur, string Embleme);
+    private Maison[]? maisons = null;
+
+    string nomMaison = string.Empty;
+
+    SorcierForm ExtendedForm = default!;
+    EditContext EditContext = default!;
+    ValidationMessageStore MessageStore = default!;
+
+    private void OnValidSubmitExtendedForm()
+    {
+        foreach (Maison maison in maisons!)
+        {
+            if (maison.Nom == ExtendedForm.Maison)
+            {
+                nomMaison = maison.Nom;
+                sorciers.Add(new Sorcier(sorciers.Count() + 1, ExtendedForm.Nom, ExtendedForm.Prénom, ExtendedForm.Maison, maison.Id));
+                PostToDb(sorciers[sorciers.Count() - 1]);
+            }
+        }   
+    }
+
+    protected override void OnInitialized()
+    {
+        ExtendedForm = new SorcierForm();
+        EditContext = new EditContext(ExtendedForm);
+        MessageStore = new ValidationMessageStore(EditContext);
+
+        EditContext.OnFieldChanged += (sender, eventArgs) => ValidateFields((EditContext)sender!, MessageStore, eventArgs.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        HttpClient httpClient = factory.CreateClient("Poudlard");
+        maisons = await httpClient.GetFromJsonAsync<Maison[]>("maison", new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+        sorciersDb = await httpClient.GetFromJsonAsync<Sorcier[]>("sorcier", new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+        sorciers = new List<Sorcier>(sorciersDb);
+    }
+
+    private void ValidateFields(EditContext editContext, ValidationMessageStore messageStore, FieldIdentifier fieldIdentifier)
+    {
+        messageStore.Clear();
+
+        if (sorciers.Any(e => e.Nom == ExtendedForm.Nom))
+        {
+            messageStore.Add(fieldIdentifier, "Le sorcier est déjà dans la base de données.");
+            editContext.NotifyValidationStateChanged();
+        }
+    }
+
+    private async Task PostToDb(Sorcier nouveauSorcier)
+    {
+        HttpClient httpClient = factory.CreateClient("Poudlard");
+        var response = await httpClient.PostAsJsonAsync("sorcier", nouveauSorcier);
+    }
+
+    class SorcierForm
+    {
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public string Nom { get; set; } = "";
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public string Prénom { get; set; } = "";
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public string Maison { get; set; } = "";
+    }
+}
